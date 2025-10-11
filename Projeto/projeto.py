@@ -1,6 +1,10 @@
 from contas import contas
 import getpass
 from datetime import datetime
+import os
+
+def limparEcra():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 def login(contas: dict):
     while True:
@@ -22,9 +26,10 @@ def login(contas: dict):
             return idConta
         else: 
             print("Acesso negado. PIN incorreto.")
-
+    limparEcra()
 
 def menu():
+    limparEcra()
     print("\n=== MULTIBANCO ===\n")
     print("1. Consultar Saldo\n")
     print("2. Realizar Levantamento\n")
@@ -40,20 +45,39 @@ def main(contas, idConta):
         opcao = input("Opção: ").strip()
         match opcao:
             case "1":
+                limparEcra()
                 consultarSaldo(contas, idConta)
             case "2":
+                limparEcra()
                 levantamentos(contas, idConta)
             case "3":
+                limparEcra()
                 depositos(contas, idConta)
             case "4":
+                limparEcra()
                 transferencias(contas, idConta)
             case "5":
+                limparEcra()
                 consultarMovimentos(contas, idConta)
             case "6":
+                limparEcra()
                 print("Obrigado por utilizar o nosso multibanco e até já!")
                 break
             case _:
                 return "Opção Invalida"
+            
+def gerarIDT(contas):
+    max_id = 0
+    
+    for conta in contas.values():
+        for x in conta.get("Transferencias", []):
+            trans_id = x.get("Transferencia_ID")
+            if isinstance(trans_id, str) and trans_id.isdigit():
+                max_id = max(max_id, int(trans_id))
+            elif isinstance(trans_id, int):
+                max_id = max(max_id, trans_id)
+    return f"{max_id + 1:03d}"
+
 
 def consultarSaldo(contas: dict, idConta):
     if idConta in contas:  
@@ -84,13 +108,15 @@ def levantamentos(contas: dict, idConta):
         saldoAtual= float(dados["Saldo"])
         if valorL <= 0:
             print("Tem de ser um valor < 0 !")
+            input("Prima ENTER para continuar...")
+            return
         if valorL > saldoAtual:
             print("Saldo Insuficiente! ")
         else:
             saldoAtual -= valorL
-            dados["Saldo"]= f"{saldoAtual:.2f}"
+            dados["Saldo"]= round(saldoAtual, 2)
             print(f"Levantamento de {valorL:.2f} € realizado com sucesso.")
-            print(f"O seu Saldo Atual e de {saldoAtual:.2f} €")
+            print(f"O seu Saldo Atual é de {saldoAtual:.2f} €")
             
             agora=datetime.now()
             total_transf = 0
@@ -99,7 +125,7 @@ def levantamentos(contas: dict, idConta):
             id_transferencia = f"{total_transf + 1:03d}"
  
             transf = {
-                "ID": gerarIDT(contas),
+                "Transferencia_ID": gerarIDT(contas),
                 "Data": agora.strftime("%Y-%m-%d"),
                 "Hora": agora.strftime("%H:%M"),
                 "Valor": -valorL,
@@ -119,19 +145,20 @@ def depositos(contas: dict, idConta):
         try:
             valorD=float(input("Insira o valor a depositar: ").replace(",","."))
         except ValueError:
-            print("(X) Valor Inválido!")
+            print("Valor Inválido!")
             input("Prima ENTER para continuar...")
             return
         saldoAtual= float(dados["Saldo"])
         if valorD <= 0:
-            print("(X)Tem de ser um valor < 0 !")
+            print("Tem de ser um valor < 0 !")
+            input("Prima ENTER para continuar...")
         if valorD > 1000000:
             print("Máximo de deposito e de 1 milhão! ")
         else:
             saldoAtual += valorD
-            dados["Saldo"]= f"{saldoAtual:.2f}"
+            dados["Saldo"] = round(saldoAtual, 2)
             print(f"Deposito de {valorD:.2f} € realizado com sucesso.")
-            print(f"O seu Saldo Atual é de {saldoAtual:..2f} €")
+            print(f"O seu Saldo Atual é de {saldoAtual:.2f} €")
             
             agora=datetime.now()
             total_transf = 0
@@ -140,7 +167,7 @@ def depositos(contas: dict, idConta):
             id_transferencia = f"{total_transf + 1:03d}"
             
             transf = {
-                "ID": gerarIDT(contas),
+                "Transferencia_ID": gerarIDT(contas),
                 "Data": agora.strftime("%Y-%m-%d"),
                 "Hora": agora.strftime("%H:%M"),
                 "Valor": +valorD,
@@ -190,7 +217,6 @@ def transferencias(contas: dict, idConta: str ):
     print(f"Transferência de {valor:.2f} € realizada com sucesso para {contas[idDestino]['Nome']}.")
     input("Prima ENTER para continuar...")
     
-    #Adicionar transferencias aos clientes
     agora = datetime.now()
     data = agora.strftime("%Y-%m-%d")
     hora = agora.strftime("%H:%M")
@@ -218,17 +244,57 @@ def transferencias(contas: dict, idConta: str ):
     conta_origem["Transferencias"].append(transf_origem)
     contas[idDestino]["Transferencias"].append(transf_destino)
     
+def consultarMovimentos(contas: dict, idConta: str):
+    dados = contas.get(idConta)
     
+    movimentos = dados.get("Transferencias", [])
+    if not movimentos:
+        print("\nNenhum movimento registado.")
+        input("Prima ENTER para continuar...")
+        return
+
+    def obter_data_hora(m):
+        data = m.get("Data", "1900-01-01")
+        hora = m.get("Hora", "00:00")
+        try:
+            return datetime.strptime(f"{data} {hora}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return datetime.min
+
+    def tipo_e_descricao(m):
+        try:
+            v = float(m.get("Valor", 0.0))
+        except (TypeError, ValueError):
+            v = 0.0
+
+        destino = m.get("IBAN Conta Destinatário", "")
+        remetente = m.get("IBAN Conta Remetente", "")
+
+
+        if destino == "Levantamento":
+            return "Levantamento", "Levantamento em numerário", v
+        if destino == "Deposito":
+            return "Depósito", "Depósito em numerário", v
+
+        if v < 0:
+            return "Transferência (Enviada)", f"Para {destino}", v
+        else:
+            return "Transferência (Recebida)", f"De {remetente}", v
+
+    ultimos = sorted(movimentos, key=obter_data_hora, reverse=True)[:10]
+
+    print("\n=== Últimos movimentos ===")
+    for m in ultimos:
+        dt = obter_data_hora(m)
+        tipo, descricao, valor = tipo_e_descricao(m)
+        print(f"{dt:%Y-%m-%d %H:%M} — {tipo}: {valor:+.2f} € — {descricao}")
+
+    input("Prima ENTER para continuar...")
+
 
 idConta = login(contas)
 if idConta:    
     main(contas, idConta)
 
-def gerarIDT():
-    for conta in contas.values():
-        for x in conta.get("Transferencias", []):
-            trans_id = x.get("Transferencia_ID")
-            
-            idT = int(trans_id)
-    return f"{idT + 1:03d}"
+
         
